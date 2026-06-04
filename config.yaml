@@ -1,0 +1,11 @@
+app:
+  name: Aloud
+  description: Built to read text aloud
+  version: 1.0.0
+  user: Goodluck
+
+security:
+  access_key: secret
+
+voice_model:
+  path: app/services/data/en_US-amy-medium.onnx

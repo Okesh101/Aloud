@@ -1,0 +1,22 @@
+Flask
+Flask[async]
+Flask-SQLAlchemy
+Flask-Limiter
+flask_cors
+flask-migrate
+python-dotenv
+gunicorn
+psycopg2-binary
+werkzeug
+flask-jwt-extended
+# groq
+requests
+pyyaml
+# openai
+sounddevice 
+soundfile 
+scipy
+pygame
+# For Text-to-Speech (The "Nice" Voice)
+piper-tts
+numpy
