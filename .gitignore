@@ -9,6 +9,6 @@ venv/
 .env
 
 # data/
-# en_US-amy-medium.onnx
-# en_US-amy-medium.onnx.json
+en_US-amy-medium.onnx
+en_US-amy-medium.onnx.json
 # config.yaml
