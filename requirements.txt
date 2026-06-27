@@ -19,4 +19,8 @@ scipy
 pygame
 # For Text-to-Speech (The "Nice" Voice)
 piper-tts
+pyttsx3
 numpy
+edge_tts
+# For pdf
+pypdf

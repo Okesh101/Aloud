@@ -1,21 +1,25 @@
 # app/api/read/routes.py
 
-from flask import Blueprint, jsonify, request, Response
+from flask import Blueprint, jsonify, request, Response, stream_with_context
 from sqlalchemy import desc, select
-from app.utils.extensions import limiter, db
+from app.utils.extensions import limiter, db, add_intent_markup
 from app.models.Reading import Reading
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import UTC, datetime
 from io import BytesIO
+from pypdf import PdfReader
+import pyttsx3
+import edge_tts
+import asyncio
 import soundfile as sf
-import numpy as np
-from app.services.ttsService import generate_speech, generate_speech_python_api
+from app.services.ttsService import generate_speech
 
 read_bp = Blueprint('read', __name__)
 
+
 @read_bp.route('/text', methods=['POST'])
 @jwt_required()
-@limiter.limit('10 per minute')
+@limiter.limit('15 per minute')
 def read_text_endpoint():
     current_user_id = get_jwt_identity()
     data = request.get_json()
@@ -27,7 +31,7 @@ def read_text_endpoint():
             "message": 'No text provided',
             "code": 400
         }), 400
-    
+
     # await speak(text)
     audio_array, sample_rate = generate_speech(text)
     # audio_array, sample_rate = generate_speech_python_api(text)
@@ -46,14 +50,15 @@ def read_text_endpoint():
 
     last_total_reads = 0
     last_today_reads = 0
-    last_updated_at = datetime.now(UTC).date()  # Default to current date if no previous record exists
+    # Default to current date if no previous record exists
+    last_updated_at = datetime.now(UTC).date()
     current_date = datetime.now(UTC).date()
 
     if user_has_read:
         last_total_reads = user_has_read.total_reads
         last_today_reads = user_has_read.today_reads
         last_updated_at = user_has_read.updated_at.date()
-        
+
     new_reading = Reading(
         user_id=current_user_id,
         content=text[:120],  # Store only the first 55 characters for summary
@@ -68,7 +73,7 @@ def read_text_endpoint():
 
         reading_data = new_reading.to_dict()
 
-        response =  Response(
+        response = Response(
             buffer.read(),
             mimetype='audio/wav',
             headers={
@@ -83,7 +88,7 @@ def read_text_endpoint():
         )
 
         return response
-    
+
     except Exception as e:
         db.session.rollback()
         print("ERROR!", str(e))
@@ -91,8 +96,7 @@ def read_text_endpoint():
             "status": "ERROR",
             "message": f"DB error occurred: {str(e)}.",
             "code": 500
-            }), 500
-
+        }), 500
 
 
 @read_bp.route('/pdf', methods=['POST'])
@@ -115,6 +119,18 @@ def read_pdf_endpoint():
             "code": 400
         }), 400
 
+    reader = PdfReader(file)
+
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text() or ""
+
+    engine = pyttsx3.init()
+    engine.save_to_file(text, "audiobook.mp3")
+    engine.runAndWait()
+
+    print("Audiobook Created!")
+
     # Here you would add the logic to process the PDF and convert it to speech
     # For now, we will just return the filename as a placeholder
     return jsonify({
@@ -125,7 +141,7 @@ def read_pdf_endpoint():
 
 
 @read_bp.route('/visitor', methods=['POST'])
-@limiter.limit('2 per 4 hours')
+@limiter.limit('10 per 4 hours')
 def read_visitor_text_endpoint():
     data = request.get_json()
     text = data.get('text', '')
@@ -147,12 +163,43 @@ def read_visitor_text_endpoint():
         }), 400
 
     # Here you would add the logic to convert text to speech and play it for visitors
+    # Clean async worker execution isolated from Flask thread state
+    async def run_tts():
+        final_text = add_intent_markup(text)
+        communicate = edge_tts.Communicate(
+            final_text, voice='en-US-JennyNeural')
+        audio_data = bytearray()
+        
+        async for chunk in communicate.stream():
+            if chunk['type'] == 'audio':
+                audio_data.extend(chunk['data'])
+        return bytes(audio_data)
+    
     # For now, we will just return the text back as a placeholder
-    return jsonify({
-        "status": "SUCCESS",
-        "code": 200,
-        "message": f'Received visitor text: {text}'
-    }), 200
+    try:
+        print("Processing Text for Visitor: ", text)
+        # asyncio.run handles loop lifecycle safely across threads
+        audio_bytes = asyncio.run(run_tts())
+
+        if not audio_bytes:
+            raise ValueError("Empty audio payload received from TTS engine")
+
+        return Response(
+            audio_bytes,
+            mimetype='audio/mpeg',
+            headers={
+                'Content-Disposition': 'inline; filename="speech.mp3"',
+                'Cache-Control': 'no-cache'
+            }
+        )
+    except Exception as e:
+        print(f"TTS Engine Error: {e}")
+        # Explicit 500 HTTP Status header so frontend handles fallback correctly
+        return jsonify({
+            "status": "ERROR",
+            "code": 500,
+            "message": f"Failed to generate speech: {str(e)}"
+        }), 500
 
 
 @read_bp.route('/stats', methods=['GET'])

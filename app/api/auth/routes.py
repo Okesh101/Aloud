@@ -10,6 +10,7 @@ from flask_jwt_extended import create_access_token, create_refresh_token, jwt_re
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/signup', methods=['POST'])
+@limiter.limit('5 per minute')
 def signup_endpoint():
     data = request.get_json()
 

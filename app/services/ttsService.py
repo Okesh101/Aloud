@@ -6,6 +6,8 @@ import wave
 import numpy as np
 import os
 from config_read import read_yaml
+from app.utils.extensions import create_ssml
+import asyncio, edge_tts
 
 yaml = read_yaml()
 model_path = yaml["voice_model"]["path"]
@@ -88,3 +90,34 @@ def generate_speech_python_api(text):
     sample_rate = voice.config.sample_rate
     
     return audio_array, sample_rate
+
+
+def generateSpeech(text, voice='en-US-JennyNeural'):
+    """
+    Generate speech using Edge TTS with SSML for natural intent understanding
+    Returns audio bytes
+    """
+    try:
+        # Create SSML with intent markup
+        ssml = create_ssml(text, voice)
+
+        # Generate audio
+        communicate = edge_tts.Communicate(ssml, voice)
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        audio_data = bytearray()
+        try:
+            for chunk in loop.run_until_complete(communicate.stream()):
+                if chunk['type'] == 'audio':
+                    audio_data.extend(chunk['data'])
+        finally:
+            loop.close()
+
+        # Return as bytes (for streaming) and sample rate
+        return bytes(audio_data), 24000  # Edge TTS uses 24kHz
+
+    except Exception as e:
+        print(f"TTS Error in generate_speech: {e}")
+        raise
